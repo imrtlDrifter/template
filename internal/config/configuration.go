@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -9,9 +11,27 @@ import (
 )
 
 type Configuration struct {
+	Telemetry  Telemetry
+	LogLevel   string
 	PostgreSQL PostgreSQL
 	Server     Server
-	LogLevel   string
+}
+
+type Telemetry struct {
+	ServiceName       string
+	ServiceVersion    string
+	Endpoint          string
+	Protocol          string
+	Sampler           string
+	ElasticEndpoint   string
+	ElasticLogin      string
+	ElasticPassword   string
+	ElasticIndex      string
+	ExportTimeout     time.Duration
+	MetricInterval    time.Duration
+	TraceBatchTimeout time.Duration
+	ElasticTimeout    time.Duration
+	SamplerRatio      float64
 }
 
 type Server struct {
@@ -55,10 +75,32 @@ func Load() (*Configuration, error) {
 			QueryTimeout:    loader.duration("DATABASE_QUERY_TIMEOUT"),
 		},
 		LogLevel: strings.ToLower(loader.string("LOG_LEVEL")),
+		Telemetry: Telemetry{
+			ServiceName:       envOrDefault("OTEL_SERVICE_NAME", "trip-service"),
+			ServiceVersion:    loader.string("SERVICE_VERSION"),
+			Endpoint:          strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+			Protocol:          envOrDefault("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
+			Sampler:           envOrDefault("OTEL_TRACES_SAMPLER", "parentbased_always_on"),
+			ElasticEndpoint:   os.Getenv("ELASTIC_ENDPOINT"),
+			ElasticLogin:      os.Getenv("ELASTIC_LOGIN"),
+			ElasticPassword:   os.Getenv("ELASTIC_PASSWORD"),
+			ElasticIndex:      envOrDefault("ELASTIC_INDEX", "trip-service-logs"),
+			ExportTimeout:     loader.milliseconds("OTEL_EXPORTER_OTLP_TIMEOUT"),
+			MetricInterval:    loader.milliseconds("OTEL_METRIC_EXPORT_INTERVAL"),
+			TraceBatchTimeout: loader.milliseconds("OTEL_BSP_SCHEDULE_DELAY"),
+			ElasticTimeout:    loader.duration("ELASTIC_TIMEOUT"),
+			SamplerRatio:      loader.ratio("OTEL_TRACES_SAMPLER_ARG"),
+		},
 	}
 
 	if loader.err != nil {
 		return nil, loader.err
+	}
+	if cfg.Telemetry.Protocol != "http/protobuf" && cfg.Telemetry.Protocol != "grpc" {
+		return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_PROTOCOL must be http/protobuf or grpc")
+	}
+	if err := cfg.Telemetry.validate(); err != nil {
+		return nil, err
 	}
 
 	if cfg.Server.MaxHeaderBytes <= 0 {
@@ -77,12 +119,52 @@ func Load() (*Configuration, error) {
 	switch cfg.LogLevel {
 	case "debug", "info", "warn", "error":
 	default:
-		return nil, fmt.Errorf(
-			"LOG_LEVEL must be one of debug, info, warn or error",
-		)
+		return nil, fmt.Errorf("LOG_LEVEL must be one of debug, info, warn or error")
 	}
 
 	return cfg, nil
+}
+
+func (c Telemetry) validate() error {
+	switch c.Sampler {
+	case "always_on", "always_off", "parentbased_always_on", "parentbased_always_off", "traceidratio", "parentbased_traceidratio":
+	default:
+		return fmt.Errorf("unsupported OTEL_TRACES_SAMPLER")
+	}
+	for _, endpoint := range []struct {
+		name  string
+		value string
+	}{{name: "OTEL_EXPORTER_OTLP_ENDPOINT", value: c.Endpoint}, {name: "ELASTIC_ENDPOINT", value: c.ElasticEndpoint}} {
+		if endpoint.value == "" {
+			continue
+		}
+		parsed, err := url.Parse(endpoint.value)
+		if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("%s must be an HTTP URL without credentials, query or fragment", endpoint.name)
+		}
+	}
+	return nil
+}
+
+func (l *envLoader) ratio(name string) float64 {
+	value := l.string(name)
+	if l.err != nil {
+		return 0
+	}
+	ratio, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 1 {
+		l.err = fmt.Errorf("%s must be between 0 and 1", name)
+		return 0
+	}
+	return ratio
+}
+
+func envOrDefault(name, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 type envLoader struct {
@@ -121,6 +203,19 @@ func (l *envLoader) duration(name string) time.Duration {
 	}
 
 	return result
+}
+
+func (l *envLoader) milliseconds(name string) time.Duration {
+	value := l.string(name)
+	if l.err != nil {
+		return 0
+	}
+	milliseconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || milliseconds <= 0 || milliseconds > int64(math.MaxInt64)/int64(time.Millisecond) {
+		l.err = fmt.Errorf("%s must be a positive number of milliseconds", name)
+		return 0
+	}
+	return time.Duration(milliseconds) * time.Millisecond
 }
 
 func (l *envLoader) int32(name string) int32 {
