@@ -16,10 +16,10 @@ type HTTPError = api.Problem
 
 type appError struct {
 	err        error
-	httpStatus int
 	code       string
 	title      string
 	detail     string
+	httpStatus int
 }
 
 func (e *appError) Error() string   { return e.err.Error() }
@@ -40,6 +40,9 @@ func NewHTTPError(err error, status int, code, title, detail string) error {
 }
 
 func NewError(ctx *gin.Context, status int, err error) {
+	if status < http.StatusContinue || status > 599 {
+		status = http.StatusInternalServerError
+	}
 	code := "invalid_request"
 	title := "Invalid request"
 	detail := err.Error()

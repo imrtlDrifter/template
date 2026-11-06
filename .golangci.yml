@@ -1,0 +1,109 @@
+version: "2"
+run:
+  concurrency: 4
+  timeout: 5m
+  build-tags: [integration]
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+linters:
+  default: none
+  enable:
+    - depguard
+    - errcheck
+    - forbidigo
+    - gochecknoinits
+    - gocritic
+    - gocyclo
+    - goconst
+    - gosec
+    - govet
+    - ineffassign
+    - makezero
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+    - asasalint
+    - asciicheck
+    - bidichk
+    - decorder
+    - dogsled
+    - dupword
+    - durationcheck
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - contextcheck
+  settings:
+    depguard:
+      rules:
+        domain:
+          files: ["**/internal/domain/**", "**/internal/domainerrors/**"]
+          deny:
+            - pkg: net/http
+              desc: domain does not depend on HTTP
+            - pkg: github.com/gin-gonic/gin
+              desc: domain does not depend on Gin
+            - pkg: github.com/jackc/pgx
+              desc: domain does not depend on PostgreSQL
+            - pkg: github.com/Masterminds/squirrel
+              desc: domain does not build SQL
+            - pkg: go.opentelemetry.io
+              desc: domain does not depend on telemetry
+            - pkg: github.com/imrtlDrifter/template/internal/generated
+              desc: domain does not depend on API types
+            - pkg: github.com/imrtlDrifter/template/internal/infra
+              desc: domain does not depend on infrastructure
+        service:
+          files: ["**/internal/service/**"]
+          deny:
+            - pkg: net/http
+              desc: service does not depend on HTTP
+            - pkg: github.com/gin-gonic/gin
+              desc: service does not depend on Gin
+            - pkg: github.com/jackc/pgx
+              desc: service uses repository interfaces
+            - pkg: github.com/Masterminds/squirrel
+              desc: service does not build SQL
+            - pkg: github.com/imrtlDrifter/template/internal/generated
+              desc: service does not depend on API types
+            - pkg: github.com/imrtlDrifter/template/internal/repositories
+              desc: repository interfaces belong to consumers
+            - pkg: github.com/imrtlDrifter/template/internal/infra
+              desc: infrastructure is injected through interfaces
+        handlers:
+          files: ["**/internal/handlers/**"]
+          deny:
+            - pkg: github.com/imrtlDrifter/template/internal/repositories
+              desc: handlers depend on services
+            - pkg: github.com/imrtlDrifter/template/internal/infra
+              desc: infrastructure is injected through interfaces
+    forbidigo:
+      forbid:
+        - pattern: ^[A-Za-z0-9]{1,}_.*\.
+    govet:
+      enable-all: true
+    revive:
+      rules:
+        - name: var-naming
+          disabled: true
+    unparam:
+      check-exported: true
+    unused:
+      field-writes-are-uses: false
+  exclusions:
+    generated: lax
+    presets: [comments, common-false-positives, legacy, std-error-handling]
+formatters:
+  enable: [gofumpt, gci]
+  settings:
+    gci:
+      custom-order: true
+      sections: [standard, localmodule, default]
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax
