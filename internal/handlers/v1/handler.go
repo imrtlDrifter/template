@@ -8,20 +8,22 @@ import (
 )
 
 type Handler struct {
-	db            readinessChecker
-	createHandler createHandler
-	getHandler    getHandler
-	finishHandler finishHandler
+	db               readinessChecker
+	createHandler    createHandler
+	getHandler       getHandler
+	finishHandler    finishHandler
+	positionsHandler positionsHandler
 }
 
 var _ api.ServerInterface = (*Handler)(nil)
 
-func NewHandler(db readinessChecker, createHandler createHandler, getHandler getHandler, finishHandler finishHandler) *Handler {
+func NewHandler(db readinessChecker, createHandler createHandler, getHandler getHandler, finishHandler finishHandler, positionsHandler positionsHandler) *Handler {
 	return &Handler{
-		db:            db,
-		createHandler: createHandler,
-		getHandler:    getHandler,
-		finishHandler: finishHandler,
+		db:               db,
+		createHandler:    createHandler,
+		getHandler:       getHandler,
+		finishHandler:    finishHandler,
+		positionsHandler: positionsHandler,
 	}
 }
 
@@ -35,6 +37,14 @@ func (h *Handler) GetTrip(c *gin.Context, tripID api.TripId) {
 
 func (h *Handler) FinishTrip(c *gin.Context, tripID api.TripId) {
 	h.finishHandler.FinishTrip(c, tripID)
+}
+
+func (h *Handler) CreateTripPosition(c *gin.Context, tripID api.TripId) {
+	h.positionsHandler.CreateTripPosition(c, tripID)
+}
+
+func (h *Handler) ListTripPositions(c *gin.Context, tripID api.TripId) {
+	h.positionsHandler.ListTripPositions(c, tripID)
 }
 
 func (h *Handler) Init(router gin.IRouter) {

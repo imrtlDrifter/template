@@ -23,6 +23,11 @@ type (
 		FinishTrip(c *gin.Context, tripID api.TripId)
 	}
 
+	positionsHandler interface {
+		CreateTripPosition(c *gin.Context, tripID api.TripId)
+		ListTripPositions(c *gin.Context, tripID api.TripId)
+	}
+
 	readinessChecker interface {
 		CheckReady(ctx context.Context) error
 	}

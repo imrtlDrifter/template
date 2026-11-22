@@ -56,7 +56,7 @@ func (r *tripRepository) getByID(ctx context.Context, id uuid.UUID, forUpdate bo
 	query := `SELECT id, user_id, driver_id,
 			start_latitude, start_longitude,
 			end_latitude, end_longitude,
-			price, status, started_at, finished_at
+			price, status, started_at, finished_at, last_position_at
 		 FROM trips
 		 WHERE id = $1`
 	if forUpdate {
@@ -64,7 +64,7 @@ func (r *tripRepository) getByID(ctx context.Context, id uuid.UUID, forUpdate bo
 	}
 
 	var trip models.Trip
-	err := transaction.GetExecutor(queryCtx, r.pool).QueryRow(queryCtx, query, id).Scan(&trip.ID, &trip.UserID, &trip.DriverID, &trip.StartPoint.Latitude, &trip.StartPoint.Longitude, &trip.EndPoint.Latitude, &trip.EndPoint.Longitude, &trip.Price, &trip.Status, &trip.StartedAt, &trip.FinishedAt)
+	err := transaction.GetExecutor(queryCtx, r.pool).QueryRow(queryCtx, query, id).Scan(&trip.ID, &trip.UserID, &trip.DriverID, &trip.StartPoint.Latitude, &trip.StartPoint.Longitude, &trip.EndPoint.Latitude, &trip.EndPoint.Longitude, &trip.Price, &trip.Status, &trip.StartedAt, &trip.FinishedAt, &trip.LastPositionAt)
 	if err != nil {
 		return nil, err
 	}

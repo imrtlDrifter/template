@@ -55,3 +55,25 @@ func requireJSONField(fields map[string]json.RawMessage, name, fieldPath string)
 
 	return nil
 }
+
+func ValidatePositionRequiredFields(body []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return err
+	}
+	if err := requireJSONField(fields, "recorded_at", "recorded_at"); err != nil {
+		return err
+	}
+	if err := requireJSONField(fields, "coordinates", "coordinates"); err != nil {
+		return err
+	}
+
+	var coordinates map[string]json.RawMessage
+	if err := json.Unmarshal(fields["coordinates"], &coordinates); err != nil {
+		return err
+	}
+	if err := requireJSONField(coordinates, "latitude", "coordinates.latitude"); err != nil {
+		return err
+	}
+	return requireJSONField(coordinates, "longitude", "coordinates.longitude")
+}

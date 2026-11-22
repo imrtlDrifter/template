@@ -51,7 +51,7 @@ generate-api:
 	mkdir -p $(dir $(OPENAPI_OUTPUT))
 	go tool oapi-codegen \
 		-generate types,gin-server \
-		-include-operation-ids createTrip,getTrip,finishTrip,health,ready \
+		-include-operation-ids createTrip,getTrip,finishTrip,createTripPosition,listTripPositions,health,ready \
 		-package api \
 		-o $(OPENAPI_OUTPUT) \
 		$(OPENAPI_SPEC)
@@ -59,9 +59,17 @@ generate-api:
 deps:
 	go mod tidy
 
+define run-mutation
+go tool gremlins unleash ./$(1) --workers=2 --timeout-coefficient=50 \
+	--output=reports/mutation/after/$(notdir $(1)).json
+endef
+
 mutation:
 	mkdir -p reports/mutation/after
-	for package in internal/domain/models internal/service/trip/create internal/service/trip/get internal/service/trip/finish; do name=$${package##*/}; go tool gremlins unleash ./$$package --workers=2 --timeout-coefficient=50 --output=reports/mutation/after/$$name.json || exit $$?; done
+	$(call run-mutation,internal/domain/models)
+	$(call run-mutation,internal/service/trip/create)
+	$(call run-mutation,internal/service/trip/get)
+	$(call run-mutation,internal/service/trip/finish)
 
 check: lint test test-integration
 

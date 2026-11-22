@@ -27,7 +27,7 @@ func TestGeneratedRoutes(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			handler := v1.NewHandler(NewMockreadinessChecker(ctrl), NewMockcreateHandler(ctrl), NewMockgetHandler(ctrl), NewMockfinishHandler(ctrl))
+			handler := v1.NewHandler(NewMockreadinessChecker(ctrl), NewMockcreateHandler(ctrl), NewMockgetHandler(ctrl), NewMockfinishHandler(ctrl), NewMockpositionsHandler(ctrl))
 			router := gin.New()
 			handler.Init(router)
 			recorder := httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestHealthAndReady(t *testing.T) {
 			if strings.HasSuffix(test.path, "/ready") {
 				db.EXPECT().CheckReady(t.Context()).Return(test.err)
 			}
-			handler := v1.NewHandler(db, NewMockcreateHandler(ctrl), NewMockgetHandler(ctrl), NewMockfinishHandler(ctrl))
+			handler := v1.NewHandler(db, NewMockcreateHandler(ctrl), NewMockgetHandler(ctrl), NewMockfinishHandler(ctrl), NewMockpositionsHandler(ctrl))
 			router := gin.New()
 			handler.Init(router)
 			recorder := httptest.NewRecorder()

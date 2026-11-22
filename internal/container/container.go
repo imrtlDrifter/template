@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/imrtlDrifter/template/internal/config"
+	"github.com/imrtlDrifter/template/internal/gateway/push"
 	"github.com/imrtlDrifter/template/internal/handlers"
 	"github.com/imrtlDrifter/template/internal/handlers/middlewares"
 	handlerv1 "github.com/imrtlDrifter/template/internal/handlers/v1"
 	createhandler "github.com/imrtlDrifter/template/internal/handlers/v1/trip/create"
 	finishhandler "github.com/imrtlDrifter/template/internal/handlers/v1/trip/finish"
 	gethandler "github.com/imrtlDrifter/template/internal/handlers/v1/trip/get"
+	positionshandler "github.com/imrtlDrifter/template/internal/handlers/v1/trip/positions"
 	"github.com/imrtlDrifter/template/internal/infra/postgres"
 	"github.com/imrtlDrifter/template/internal/infra/postgres/transaction"
 	"github.com/imrtlDrifter/template/internal/infra/server"
@@ -27,6 +29,8 @@ import (
 	createservice "github.com/imrtlDrifter/template/internal/service/trip/create"
 	finishservice "github.com/imrtlDrifter/template/internal/service/trip/finish"
 	getservice "github.com/imrtlDrifter/template/internal/service/trip/get"
+	positionsservice "github.com/imrtlDrifter/template/internal/service/trip/positions"
+	"github.com/imrtlDrifter/template/internal/worker/positions"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
@@ -42,6 +46,8 @@ type Container struct {
 	metrics         *metricSDK.MeterProvider
 	tracing         *traceSDK.TracerProvider
 	activeTrips     metric.Registration
+	pushGateway     *push.Gateway
+	positions       *positions.Worker
 	shutdownTimeout time.Duration
 }
 
@@ -81,6 +87,10 @@ func New(ctx context.Context, cfg *config.Configuration) (*Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create metrics: %w", err)
 	}
+	positionMetrics, err := telemetry.NewPositionMetrics(app.metrics)
+	if err != nil {
+		return nil, fmt.Errorf("create position metrics: %w", err)
+	}
 	poolConfig, err := postgres.NewConfig(cfg.PostgreSQL)
 	if err != nil {
 		return nil, fmt.Errorf("init postgres config: %w", err)
@@ -108,21 +118,40 @@ func New(ctx context.Context, cfg *config.Configuration) (*Container, error) {
 	tripCreate := createservice.NewTripService(tripRepo, statusHistoryRepo, idempotencyRepo, txManager, repositoryErrors, metrics)
 	tripGet := getservice.NewTripService(tripRepo, repositoryErrors)
 	tripFinish := finishservice.NewTripService(tripRepo, statusHistoryRepo, txManager, repositoryErrors, metrics)
-	services, err := service.NewService(tripCreate, tripGet, tripFinish)
+	tracer := app.tracing.Tracer(cfg.Telemetry.ServiceName)
+	propagator := tracing.NewPropagator()
+	app.pushGateway, err = push.NewGateway(cfg.Positions.PushURL, cfg.Positions.PushTimeout, tracer, propagator)
+	if err != nil {
+		return nil, fmt.Errorf("init push gateway: %w", err)
+	}
+	app.positions = positions.NewWorker(tripRepo, app.pushGateway, positionMetrics, log, tracer, cfg.Positions)
+	tripPositions := positionsservice.NewTripService(tripRepo, txManager, repositoryErrors, app.positions, positionMetrics, time.Now)
+	services, err := service.NewService(tripCreate, tripGet, tripFinish, tripPositions)
 	if err != nil {
 		return nil, fmt.Errorf("init service: %w", err)
 	}
 	createHandler := createhandler.NewHandler(services.TripCreate)
 	getHandler := gethandler.NewHandler(services.TripGet)
 	finishHandler := finishhandler.NewHandler(services.TripFinish)
-	handlerV1 := handlerv1.NewHandler(app.db, createHandler, getHandler, finishHandler)
-	httpHandler := handlers.NewHandler(handlerV1, middlewares.NewRecovery(log).Middleware, middlewares.NewTracing(app.tracing.Tracer(cfg.Telemetry.ServiceName), tracing.NewPropagator()).Middleware, log.GinMiddleware, (middlewares.Metrics{RequestDuration: metrics.RequestDuration, ActiveRequests: metrics.ActiveRequests}).Middleware, logger.WithRequestID())
+	handlerV1 := handlerv1.NewHandler(app.db, createHandler, getHandler, finishHandler, positionshandler.NewHandler(services.TripPositions))
+	httpHandler := handlers.NewHandler(handlerV1, middlewares.NewRecovery(log).Middleware, middlewares.NewTracing(tracer, propagator).Middleware, log.GinMiddleware, (middlewares.Metrics{RequestDuration: metrics.RequestDuration, ActiveRequests: metrics.ActiveRequests}).Middleware, logger.WithRequestID())
 	app.server = server.NewServer(cfg, httpHandler.Init())
 	initialized = true
 	return app, nil
 }
 
 func (c *Container) Run(ctx context.Context) error {
+	backgroundCtx := context.WithoutCancel(ctx)
+	scanCtx, stopScanner := context.WithCancel(backgroundCtx)
+	defer stopScanner()
+	workCtx, stopWorkers := context.WithCancel(backgroundCtx)
+	defer stopWorkers()
+	positionsDone := make(chan struct{})
+	go func() {
+		defer close(positionsDone)
+		c.positions.Run(scanCtx, workCtx)
+	}()
+
 	results := make(chan error, 1)
 	go func() { results <- c.server.Run() }()
 	c.logger.InfoContext(ctx, "service started")
@@ -133,13 +162,18 @@ func (c *Container) Run(ctx context.Context) error {
 		stopped = true
 	case <-ctx.Done():
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(backgroundCtx, c.shutdownTimeout)
 	defer cancel()
 	c.logger.InfoContext(shutdownCtx, "service stopping")
 	stopErr := c.server.Stop(shutdownCtx)
 	if stopErr != nil {
 		stopErr = errors.Join(stopErr, c.server.Close())
 	}
+	stopScanner()
+	stopOnDeadline := context.AfterFunc(shutdownCtx, stopWorkers)
+	defer stopOnDeadline()
+	<-positionsDone
+
 	if !stopped {
 		select {
 		case runErr = <-results:
@@ -150,9 +184,10 @@ func (c *Container) Run(ctx context.Context) error {
 	if errors.Is(runErr, http.ErrServerClosed) {
 		runErr = nil
 	}
+	drainErr := shutdownCtx.Err()
 	closeErr := c.Close(shutdownCtx)
-	if runErr != nil || stopErr != nil || closeErr != nil {
-		return fmt.Errorf("stop service: %w", errors.Join(runErr, stopErr, closeErr))
+	if err := errors.Join(runErr, stopErr, drainErr, closeErr); err != nil {
+		return fmt.Errorf("stop service: %w", err)
 	}
 	c.logger.InfoContext(shutdownCtx, "service stopped")
 	return nil
@@ -160,6 +195,9 @@ func (c *Container) Run(ctx context.Context) error {
 
 func (c *Container) Close(ctx context.Context) error {
 	var closeErr error
+	if c.pushGateway != nil {
+		c.pushGateway.Close()
+	}
 	if c.metrics != nil {
 		closeErr = errors.Join(closeErr, c.metrics.Shutdown(ctx))
 	}

@@ -15,6 +15,7 @@ type Configuration struct {
 	LogLevel   string
 	PostgreSQL PostgreSQL
 	Server     Server
+	Positions  Positions
 }
 
 type Telemetry struct {
@@ -53,6 +54,16 @@ type PostgreSQL struct {
 	QueryTimeout    time.Duration
 }
 
+type Positions struct {
+	PushURL       string
+	CheckInterval time.Duration
+	StaleAfter    time.Duration
+	PushTimeout   time.Duration
+	Workers       int
+	QueueSize     int
+	BatchSize     int
+}
+
 func Load() (*Configuration, error) {
 	loader := envLoader{}
 
@@ -73,6 +84,15 @@ func Load() (*Configuration, error) {
 			MaxConnLifetime: loader.duration("DATABASE_MAX_CONN_LIFETIME"),
 			ConnectTimeout:  loader.duration("DATABASE_CONNECT_TIMEOUT"),
 			QueryTimeout:    loader.duration("DATABASE_QUERY_TIMEOUT"),
+		},
+		Positions: Positions{
+			PushURL:       loader.string("PUSH_HTTP_URL"),
+			CheckInterval: loader.duration("POSITION_CHECK_INTERVAL", "30s"),
+			StaleAfter:    loader.duration("POSITION_STALE_AFTER", "60s"),
+			PushTimeout:   loader.duration("PUSH_REQUEST_TIMEOUT", "1s"),
+			Workers:       loader.integer("POSITION_WORKERS", "4"),
+			QueueSize:     loader.integer("POSITION_QUEUE_SIZE", "100"),
+			BatchSize:     loader.integer("POSITION_SCAN_BATCH_SIZE", "100"),
 		},
 		LogLevel: strings.ToLower(loader.string("LOG_LEVEL")),
 		Telemetry: Telemetry{
@@ -101,6 +121,19 @@ func Load() (*Configuration, error) {
 	}
 	if err := cfg.Telemetry.validate(); err != nil {
 		return nil, err
+	}
+
+	for _, setting := range []struct {
+		name  string
+		value int
+	}{
+		{name: "POSITION_WORKERS", value: cfg.Positions.Workers},
+		{name: "POSITION_QUEUE_SIZE", value: cfg.Positions.QueueSize},
+		{name: "POSITION_SCAN_BATCH_SIZE", value: cfg.Positions.BatchSize},
+	} {
+		if setting.value <= 0 {
+			return nil, fmt.Errorf("%s must be positive", setting.name)
+		}
 	}
 
 	if cfg.Server.MaxHeaderBytes <= 0 {
@@ -171,7 +204,7 @@ type envLoader struct {
 	err error
 }
 
-func (l *envLoader) string(name string) string {
+func (l *envLoader) string(name string, fallback ...string) string {
 	if l.err != nil {
 		return ""
 	}
@@ -179,6 +212,9 @@ func (l *envLoader) string(name string) string {
 	value, ok := os.LookupEnv(name)
 	value = strings.TrimSpace(value)
 	if !ok || value == "" {
+		if len(fallback) != 0 {
+			return fallback[0]
+		}
 		l.err = fmt.Errorf("required environment variable %s is not set", name)
 		return ""
 	}
@@ -186,8 +222,8 @@ func (l *envLoader) string(name string) string {
 	return value
 }
 
-func (l *envLoader) duration(name string) time.Duration {
-	value := l.string(name)
+func (l *envLoader) duration(name string, fallback ...string) time.Duration {
+	value := l.string(name, fallback...)
 	if l.err != nil {
 		return 0
 	}
@@ -233,8 +269,8 @@ func (l *envLoader) int32(name string) int32 {
 	return int32(result)
 }
 
-func (l *envLoader) integer(name string) int {
-	value := l.string(name)
+func (l *envLoader) integer(name string, fallback ...string) int {
+	value := l.string(name, fallback...)
 	if l.err != nil {
 		return 0
 	}

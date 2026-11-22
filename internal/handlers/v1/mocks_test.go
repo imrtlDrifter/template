@@ -126,6 +126,54 @@ func (mr *MockfinishHandlerMockRecorder) FinishTrip(c, tripID any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinishTrip", reflect.TypeOf((*MockfinishHandler)(nil).FinishTrip), c, tripID)
 }
 
+// MockpositionsHandler is a mock of positionsHandler interface.
+type MockpositionsHandler struct {
+	ctrl     *gomock.Controller
+	recorder *MockpositionsHandlerMockRecorder
+	isgomock struct{}
+}
+
+// MockpositionsHandlerMockRecorder is the mock recorder for MockpositionsHandler.
+type MockpositionsHandlerMockRecorder struct {
+	mock *MockpositionsHandler
+}
+
+// NewMockpositionsHandler creates a new mock instance.
+func NewMockpositionsHandler(ctrl *gomock.Controller) *MockpositionsHandler {
+	mock := &MockpositionsHandler{ctrl: ctrl}
+	mock.recorder = &MockpositionsHandlerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockpositionsHandler) EXPECT() *MockpositionsHandlerMockRecorder {
+	return m.recorder
+}
+
+// CreateTripPosition mocks base method.
+func (m *MockpositionsHandler) CreateTripPosition(c *gin.Context, tripID api.TripId) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "CreateTripPosition", c, tripID)
+}
+
+// CreateTripPosition indicates an expected call of CreateTripPosition.
+func (mr *MockpositionsHandlerMockRecorder) CreateTripPosition(c, tripID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTripPosition", reflect.TypeOf((*MockpositionsHandler)(nil).CreateTripPosition), c, tripID)
+}
+
+// ListTripPositions mocks base method.
+func (m *MockpositionsHandler) ListTripPositions(c *gin.Context, tripID api.TripId) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "ListTripPositions", c, tripID)
+}
+
+// ListTripPositions indicates an expected call of ListTripPositions.
+func (mr *MockpositionsHandlerMockRecorder) ListTripPositions(c, tripID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTripPositions", reflect.TypeOf((*MockpositionsHandler)(nil).ListTripPositions), c, tripID)
+}
+
 // MockreadinessChecker is a mock of readinessChecker interface.
 type MockreadinessChecker struct {
 	ctrl     *gomock.Controller

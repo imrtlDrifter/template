@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY trips_stale_position_idx;
