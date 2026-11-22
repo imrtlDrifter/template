@@ -1,0 +1,59 @@
+{
+  "trace_id": "2563d964034330ec891e2ac7f8aa46b5",
+  "span_id": "18089b15be70de01",
+  "http_route": "/api/v1/trips",
+  "http_status": 201,
+  "spans": [
+    {
+      "operation": "pool.acquire",
+      "attributes": {}
+    },
+    {
+      "operation": "BEGIN",
+      "attributes": {
+        "db.collection.name": "",
+        "db.operation.name": "BEGIN"
+      }
+    },
+    {
+      "operation": "INSERT",
+      "attributes": {
+        "db.operation.name": "INSERT"
+      }
+    },
+    {
+      "operation": "INSERT",
+      "attributes": {
+        "db.collection.name": "trips",
+        "db.operation.name": "INSERT"
+      }
+    },
+    {
+      "operation": "INSERT",
+      "attributes": {
+        "db.operation.name": "INSERT"
+      }
+    },
+    {
+      "operation": "INSERT",
+      "attributes": {
+        "db.collection.name": "trip_status_history",
+        "db.operation.name": "INSERT"
+      }
+    },
+    {
+      "operation": "COMMIT",
+      "attributes": {
+        "db.collection.name": "",
+        "db.operation.name": "COMMIT"
+      }
+    },
+    {
+      "operation": "POST /api/v1/trips",
+      "attributes": {
+        "http.route": "/api/v1/trips"
+      }
+    }
+  ],
+  "active_trips_gauge_verified": true
+}

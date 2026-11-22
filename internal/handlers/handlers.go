@@ -1,23 +1,16 @@
 package handlers
 
-import (
-	handlerv1 "github.com/imrtlDrifter/template/internal/handlers/v1"
-	"github.com/imrtlDrifter/template/internal/service"
-	"github.com/imrtlDrifter/template/pkg/database"
-	"github.com/imrtlDrifter/template/pkg/logger"
-
-	"github.com/gin-gonic/gin"
-)
+import "github.com/gin-gonic/gin"
 
 type Handler struct {
-	db       *database.Database
-	services *service.Service
+	handlerV1   handlerV1
+	middlewares []gin.HandlerFunc
 }
 
-func NewHandler(db *database.Database, services *service.Service) *Handler {
+func NewHandler(handlerV1 handlerV1, middlewares ...gin.HandlerFunc) *Handler {
 	return &Handler{
-		db:       db,
-		services: services,
+		handlerV1:   handlerV1,
+		middlewares: middlewares,
 	}
 }
 
@@ -27,11 +20,7 @@ func (h *Handler) Init() *gin.Engine {
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
 
-	router.Use(
-		logger.WithRequestID(),
-		logger.GinMiddleware(),
-		gin.Recovery(),
-	)
+	router.Use(h.middlewares...)
 
 	h.initAPI(router)
 
@@ -39,6 +28,5 @@ func (h *Handler) Init() *gin.Engine {
 }
 
 func (h *Handler) initAPI(router *gin.Engine) {
-	handlerV1 := handlerv1.NewHandler(h.db, h.services)
-	handlerV1.Init(router)
+	h.handlerV1.Init(router)
 }

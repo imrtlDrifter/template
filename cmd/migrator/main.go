@@ -7,11 +7,12 @@ import (
 	"log"
 	"os"
 
+	appconfig "github.com/imrtlDrifter/template/internal/config"
+	"github.com/imrtlDrifter/template/migrations"
+
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	appconfig "github.com/imrtlDrifter/template/internal/config"
-	"github.com/imrtlDrifter/template/migrations"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
